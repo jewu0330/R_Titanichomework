@@ -1,0 +1,216 @@
+---
+title: "資料分析報告"
+author: "Ji-Ying Wu"
+date: "12/9/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+
+#簡介
+**這份報告中使用了Kaggle的Titanic訓練資料，將遺漏值補齊後對其中具有社會意義之變數進行分析，並探討之間的關聯性。**
+
+---
+
+#資料讀取
+**我使用`read.csv()`將資料匯入。**
+
+```{r results='hide'}
+titanic_csv <- read.csv("https://storage.googleapis.com/r_rookies/kaggle_titanic_train.csv")
+```
+
+---
+
+#資料框外觀
+**titanic的資料有891個觀測值及12個變數**
+
+```{r results='hide'}
+str(titanic_csv)
+```
+
+---
+
+**在titanic資料中，變數age欄有177個遺漏值。**
+
+```{r results='hide'}
+summary(titanic_csv)
+```
+
+---
+
+#資料清理
+**我決定使用VIM套件中的kNN()函數來填補遺漏值。**
+
+---
+
+- 首先我安裝VIM套件，然後把它lib進來。將titanic資料帶入kNN函數中，新命名為nona_titanic。
+    - 因為遺漏值都在age欄裡，所以括號裡沒有放入其他arguments，全部使用kNN函數的預設。
+
+```{r warning=FALSE, message=FALSE}
+library(VIM)
+nona_titanic <- kNN(titanic_csv)
+```
+
+---
+
+- 再看nona_titanic的structure，會發現age裡沒有遺漏值了，但是多了12變數讓kNN函數用來計算以填補遺漏值。
+  
+```{r echo=TRUE}
+str(nona_titanic)
+```
+
+---
+
+- 最後用subset()函數把要的變數選出來。再檢查一下nona_titanic已經變回891個觀測值及12個變數，沒有遺漏值。
+```{r}
+nona_titanic <- subset(nona_titanic, select = PassengerId:Embarked)
+head(nona_titanic)
+summary(nona_titanic)
+```
+
+---
+
+#資料分析
+**這裡假設存活率和其他的變數有關聯性，並做進一步的探討。**
+
+---
+
+- 我使用統計學常用的chi-square test來做測試，如果p-value < 0.05 代表有重要的關聯。
+```{r warning=FALSE, results='hide'}
+chisq.test(nona_titanic$Survived,nona_titanic$Sex)
+chisq.test(nona_titanic$Survived,nona_titanic$Pclass)
+chisq.test(nona_titanic$Survived,nona_titanic$Age)
+chisq.test(nona_titanic$Survived,nona_titanic$SibSp)
+chisq.test(nona_titanic$Survived,nona_titanic$Parch)
+chisq.test(nona_titanic$Survived,nona_titanic$Fare)
+chisq.test(nona_titanic$Survived,nona_titanic$Ticket)
+chisq.test(nona_titanic$Survived,nona_titanic$Embarked)
+```
+- 但是發現所有p-values都比0.05小很多，而且除了變數Sex和Pclass以外都有跳出警告說可能不準確。所以我決定不進一步對變數做correlation test。
+    
+---
+
+**我決定挑出公認對存活率最有直接關聯的Sex, Pclass, Age做分析。**
+
+- 先將Age分成4個levels比較好做比較，再用`setDT()`將新的變數agegroup欄合併到原來的資料框nona_titanic，命名為titanic_morecomplete。
+```{r warning=FALSE, message=FALSE}
+library(data.table)
+
+agebreaks <- c(0,20,39,64,150)
+agelabels = c("0-20","21-39","40-64","65+")
+titanic_morecomplete <- setDT(nona_titanic)[ , agegroups:= cut(Age, breaks= agebreaks, right= FALSE, labels= agelabels)]
+str(titanic_morecomplete)
+```
+
+---
+
+- 用`table()`函數做出列為survived，欄分別為Sex,Pclass,agegroup的表格。並用`rbind()`加總以便計算存活率。
+```{r}
+#Sex
+sex_v_survived <- table(nona_titanic$Survived,nona_titanic$Sex)
+(sex_v_survived <- rbind(sex_v_survived, total = colSums(sex_v_survived)))
+
+#Pclass
+pclass_v_survived <- table(nona_titanic$Survived,nona_titanic$Pclass)
+(pclass_v_survived <- rbind(pclass_v_survived, total = colSums(pclass_v_survived)))
+
+#age groups
+agegroups_v_survived <- table(nona_titanic$Survived,nona_titanic$agegroups)
+(agegroups_v_survived <- rbind(agegroups_v_survived, total = colSums(agegroups_v_survived)))
+```
+
+---
+
+**計算存活率**
+
+-我先將scales package lib進來，並用裡面的`percent()`函數將計算出的存活率轉換為百分比。
+```{r results='hide', message=FALSE}
+library('scales')
+
+#survival rate by sex
+female_survival_rate <- percent(sex_v_survived[2,"female"]/sex_v_survived[3,"female"])
+male_survival_rate <- percent(sex_v_survived[2,"male"]/sex_v_survived[3,"male"])
+
+#survival rate by class
+class1_survival_rate <- percent(pclass_v_survived[2,"1"]/pclass_v_survived[3,"1"])
+class2_survival_rate <- percent(pclass_v_survived[2,"2"]/pclass_v_survived[3,"2"])
+class3_survival_rate<- percent(pclass_v_survived[2,"3"]/pclass_v_survived[3,"3"])
+
+#survival rate by age groups
+first_agegroup_survival_rate <- percent(agegroups_v_survived[2,"0-20"]/agegroups_v_survived[3,"0-20"])
+second_agegroup_survival_rate <- percent(agegroups_v_survived[2,"21-39"]/agegroups_v_survived[3,"21-39"])
+third_agegroup_survival_rate <- percent(agegroups_v_survived[2,"40-64"]/agegroups_v_survived[3,"40-64"])
+forth_agegroup_survival_rate <- percent(agegroups_v_survived[2, "65+"]/agegroups_v_survived[3,"65+"])
+```
+
+---
+
+#資料視覺化
+**先建立data frame。**
+```{r results='hide'}
+#sex
+sex <- c("male","female")
+sex_survival_rate <- c(male_survival_rate,female_survival_rate)
+sex_survival_rate_df <- data.frame(sex,sex_survival_rate)
+
+#class
+pclass <- c("pclass_first","pclass_second","pclass_third")
+pclass_survival_rate <- c(class1_survival_rate,class2_survival_rate,class3_survival_rate)
+pclass_survival_rate_df <- data.frame(pclass,pclass_survival_rate)
+
+#age
+age <- c("0-20","21-39","40-64","65+")
+age_survival_rate <- c(first_agegroup_survival_rate,second_agegroup_survival_rate,third_agegroup_survival_rate,forth_agegroup_survival_rate)
+age_survival_rate_df <- data.frame(age,age_survival_rate)
+```
+
+---
+
+**lib ggplot2和plotly進來做繪圖。**
+```{r message=FALSE}
+library(ggplot2)
+library(plotly)
+```
+
+---
+
+**性別vs存活率的長條圖**
+```{r}
+bar_sex_survival <- ggplot(sex_survival_rate_df, aes(x = sex, y = sex_survival_rate, fill = sex)) + geom_bar(stat = "identity") + xlab("Sex") + ylab("Survival Rate")
+bar_sex_survival_plotly <- ggplotly(bar_sex_survival)
+bar_sex_survival_plotly
+```
+
+---
+
+**艙等vs存活率的長條圖**
+```{r}
+bar_pclass_survival <- ggplot(pclass_survival_rate_df, aes(x = pclass, y = pclass_survival_rate, fill = pclass)) + geom_bar(stat = "identity") + xlab("Passenger Class") + ylab("Survival Rate")
+bar_pclass_survival_plotly <- ggplotly(bar_pclass_survival)
+bar_pclass_survival_plotly
+```
+
+---
+
+**不同年齡層vs存活率的長條圖**
+```{r}
+bar_age_survival <- ggplot(age_survival_rate_df, aes(x = age, y = age_survival_rate, fill = age)) + geom_bar(stat = "identity") + xlab("Age Groups") + ylab("Survival Rate")
+bar_age_survival_plotly <- ggplotly(bar_age_survival)
+bar_age_survival_plotly
+```
+
+---
+
+#結論
+**由長條圖可以明顯的看出來，在鐵達尼號船難中女性比男性存活率高。乘客的艙等越高，存活率越高。以年紀來說，各年齡層的存活率沒有像不同性別和艙等的差異那麼大，但20歲以下的年輕人存活率較高。**
+
+
+
+
+
+
+
